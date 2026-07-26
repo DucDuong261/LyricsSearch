@@ -1,0 +1,12 @@
+Giai đoạn Thu thập & Cắt gọt (Data Preparation)
+Bước 1: Quét danh sách 500 bài hát đẩy vào MongoDB (bạn đã có script).
+
+Bước 2 - Cào Lyrics: Sử dụng API của LRCLIB để lấy lời bài hát có kèm thời gian (file .lrc).
+
+Bước 3 - Cào & Cắt Audio: Dựa vào thời gian của đoạn điệp khúc trong file .lrc, dùng yt-dlp và ffmpeg tải và cắt đúng 30 giây âm thanh tương ứng từ YouTube.
+2. Giai đoạn Xây dựng Kho tìm kiếm (Vectorization)
+Bước 4 - Nhúng Text: Chạy toàn bộ lời bài hát (text trơn) của 500 bài qua mô hình Sentence-BERT để biến chúng thành các vector số học.
+
+Bước 5 - Lưu trữ: Lưu các vector này vào cơ sở dữ liệu FAISS. Bước này hoàn thiện hệ thống tìm kiếm NLP.
+
+3. Giai đoạn Kiểm thử & Đánh giá (Inference & Evaluation)Bước 6 - Nhận diện Âm thanh: Đưa các đoạn nhạc 30s qua mô hình Transformer (Whisper) để AI tự nghe và xuất ra văn bản.Bước 7 - Đánh giá Acoustic: So sánh văn bản Whisper nghe được với lời gốc để tính Tỷ lệ lỗi từ (WER - Word Error Rate).Bước 8 - Test luồng End-to-End (Quan trọng nhất): Lấy đoạn văn bản (có thể chứa lỗi sai) do Whisper vừa tạo ra $\rightarrow$ Đẩy vào Sentence-BERT để tìm kiếm $\rightarrow$ Xem hệ thống có trả về đúng ID của bài hát gốc không.
