@@ -1,10 +1,12 @@
-from pymongo import MongoClient
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from config import get_tracks_collection, PROJECT_ROOT
 
 def extract_all_songs():
     print("Đang kết nối vào Database...")
-    client = MongoClient("mongodb://localhost:27017/")
-    db = client["lyrics_recognition"]
-    tracks_col = db["tracks"]
+    tracks_col = get_tracks_collection()
 
     # Chỉ truy xuất trường metadata để tăng tốc độ và giảm RAM
     tracks = tracks_col.find({"metadata": {"$exists": True}}, {"metadata.title": 1, "metadata.artist": 1, "_id": 0})
@@ -26,7 +28,7 @@ def extract_all_songs():
     print("="*50)
 
     # Lưu ra file text để dễ copy/paste tìm kiếm
-    output_filename = "danh_sach_bai_hat.txt"
+    output_filename = str(PROJECT_ROOT / "danh_sach_bai_hat.txt")
     with open(output_filename, "w", encoding="utf-8") as f:
         f.write(f"TỔNG SỐ BÀI HÁT: {len(song_list)}\n")
         f.write("="*50 + "\n")

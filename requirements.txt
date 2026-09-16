@@ -1,0 +1,23 @@
+# Core Database & Env
+pymongo>=4.6.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Audio & Scraping
+ytmusicapi>=1.7.0
+yt-dlp>=2024.3.10
+librosa>=0.10.1
+soundfile>=0.12.1
+
+# AI / ML
+numpy>=1.26.0,<2.0.0
+torch
+torchaudio
+transformers>=4.38.0
+sentence-transformers>=2.5.0
+accelerate>=0.28.0
+faiss-cpu>=1.8.0
+
+# Web UI
+streamlit>=1.32.0
+audio-recorder-streamlit>=0.0.8

@@ -1,19 +1,21 @@
 import faiss
 import json
 import numpy as np
-from pymongo import MongoClient
 from sentence_transformers import SentenceTransformer
+from config import (
+    get_tracks_collection, SBERT_MODEL,
+    FAISS_INDEX_PATH, ID_MAPPING_PATH
+)
 
 print("Đang khởi động 'Bộ não' AI (Vui lòng đợi vài giây)...")
 
-model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-index = faiss.read_index("lyrics_db.index")
+model = SentenceTransformer(SBERT_MODEL, device='cpu')
+index = faiss.read_index(str(FAISS_INDEX_PATH))
 
-with open('id_mapping.json', 'r', encoding='utf-8') as f:
+with open(str(ID_MAPPING_PATH), 'r', encoding='utf-8') as f:
     chunk_mapping = json.load(f)
 
-client = MongoClient("mongodb://localhost:27017/")
-tracks_col = client["lyrics_recognition"]["tracks"]
+tracks_col = get_tracks_collection()
 
 print("\n" + "="*50)
 print("🚀 HỆ THỐNG TÌM KIẾM BÀI HÁT TỪNG CÂU ĐÃ SẴN SÀNG!")

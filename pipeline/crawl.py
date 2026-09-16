@@ -1,17 +1,14 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import os
 import time
 from ytmusicapi import YTMusic
-from pymongo import MongoClient
-from dotenv import load_dotenv
+from config import get_tracks_collection
 
-# 1. CẤU HÌNH KẾT NỐI MONGODB
-load_dotenv()
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-DB_NAME = os.getenv("DB_NAME", "lyrics_recognition")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "tracks")
-
-client = MongoClient(MONGO_URI)
-tracks_col = client[DB_NAME][COLLECTION_NAME]
+# 1. KẾT NỐI MONGODB (Singleton từ config.py)
+tracks_col = get_tracks_collection()
 
 # 2. KHỞI TẠO YTMUSIC 
 ytmusic = YTMusic()

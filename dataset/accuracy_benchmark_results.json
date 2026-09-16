@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-09-14 18:52:25",
+  "qbh_engine": {
+    "clean": {
+      "evaluated_samples": 50,
+      "top1_accuracy": 90.0,
+      "top3_accuracy": 90.0,
+      "mrr": 0.9,
+      "avg_latency_ms": 183.9
+    },
+    "pitch_shift_2": {
+      "evaluated_samples": 50,
+      "top1_accuracy": 78.0,
+      "top3_accuracy": 78.0,
+      "mrr": 0.78,
+      "avg_latency_ms": 184.6
+    },
+    "noisy_15db": {
+      "evaluated_samples": 50,
+      "top1_accuracy": 88.0,
+      "top3_accuracy": 88.0,
+      "mrr": 0.88,
+      "avg_latency_ms": 184.7
+    }
+  },
+  "lyrics_engine": {
+    "evaluated_samples": 376,
+    "top1_accuracy": 66.22,
+    "top3_accuracy": 72.34,
+    "mrr": 0.6994,
+    "avg_latency_ms": 51.2
+  }
+}

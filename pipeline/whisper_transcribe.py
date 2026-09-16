@@ -1,16 +1,17 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import os
 import torch
 import librosa
 from transformers import pipeline
-from pymongo import MongoClient
-from dotenv import load_dotenv
+from config import get_tracks_collection, WHISPER_MODEL
 
 # ==========================================
-# 1. CẤU HÌNH CƠ SỞ DỮ LIỆU
+# 1. CẤU HÌNH CƠ SỞ DỮ LIỆU (Singleton từ config.py)
 # ==========================================
-load_dotenv()
-client = MongoClient(os.getenv("MONGO_URI", "mongodb://localhost:27017/"))
-tracks_col = client[os.getenv("DB_NAME", "lyrics_recognition")][os.getenv("COLLECTION_NAME", "tracks")]
+tracks_col = get_tracks_collection()
 
 # ==========================================
 # 2. KHỞI TẠO MÔ HÌNH WHISPER
@@ -25,9 +26,9 @@ print(f"Hệ thống đang chạy AI trên: {device.upper()}")
 # Sử dụng bản 'small' để cân bằng giữa tốc độ và độ chính xác
 transcriber = pipeline(
     "automatic-speech-recognition",
-    model="openai/whisper-small",
+    model=WHISPER_MODEL,
     device=device,
-    generate_kwargs={ "task": "transcribe"} 
+    generate_kwargs={ "task": "transcribe"}
 )
 
 # ==========================================

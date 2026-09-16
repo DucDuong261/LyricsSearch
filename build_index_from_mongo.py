@@ -1,17 +1,15 @@
 import faiss
 import numpy as np
-from pymongo import MongoClient
 from sentence_transformers import SentenceTransformer
 import json
+from config import get_tracks_collection, SBERT_MODEL, FAISS_INDEX_PATH, ID_MAPPING_PATH
 
-# 1. Kết nối MongoDB
-client = MongoClient("mongodb://localhost:27017/")
-db = client["lyrics_recognition"]
-tracks_col = db["tracks"]
+# 1. Kết nối MongoDB (Singleton từ config.py)
+tracks_col = get_tracks_collection()
 
 # 2. Khởi tạo SBERT
 print("Đang load model SBERT...")
-model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+model = SentenceTransformer(SBERT_MODEL)
 
 # 3. Lấy dữ liệu
 print("Đang lấy dữ liệu từ MongoDB...")
@@ -70,8 +68,8 @@ index = faiss.IndexFlatIP(dimension)
 index.add(np.array(embeddings).astype('float32'))
 
 # Lưu lại
-faiss.write_index(index, "lyrics_db.index")
-with open('id_mapping.json', 'w', encoding='utf-8') as f:
+faiss.write_index(index, str(FAISS_INDEX_PATH))
+with open(str(ID_MAPPING_PATH), 'w', encoding='utf-8') as f:
     json.dump(chunk_mapping, f, ensure_ascii=False)
 
 print("Đã tạo xong bộ não Indexing mới chuẩn Cosine!")
