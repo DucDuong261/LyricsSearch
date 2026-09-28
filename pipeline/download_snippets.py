@@ -18,16 +18,27 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # ==========================================
 # HÀM XỬ LÝ TẢI VÀ CẮT YOUTUBE
 # ==========================================
+def get_ytdlp_bin() -> str:
+    import shutil
+    venv_bin = Path(sys.executable).parent / "yt-dlp"
+    if venv_bin.exists():
+        return str(venv_bin)
+    which_bin = shutil.which("yt-dlp")
+    if which_bin:
+        return which_bin
+    return "yt-dlp"
+
 def download_audio_snippet(video_id, output_path, start_time="01:00", end_time="01:30"):
     """
     Sử dụng yt-dlp gọi ffmpeg để tải trực tiếp MỘT ĐOẠN 30s của video
     mà không cần tải toàn bộ file gốc. Ép kiểu về WAV 16kHz, Mono (chuẩn cho Whisper).
     """
     url = f"https://www.youtube.com/watch?v={video_id}"
+    ytdlp_bin = get_ytdlp_bin()
     
     # Cấu trúc lệnh yt-dlp
     command = [
-        "yt-dlp",
+        ytdlp_bin,
         "--quiet", "--no-warnings",
         "-f", "bestaudio",
         "--download-sections", f"*{start_time}-{end_time}",

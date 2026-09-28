@@ -11,9 +11,12 @@ tracks_col = get_tracks_collection()
 print("Đang load model SBERT...")
 model = SentenceTransformer(SBERT_MODEL)
 
-# 3. Lấy dữ liệu
-print("Đang lấy dữ liệu từ MongoDB...")
-query = {"lyrics.full_text": {"$exists": True}}
+# 3. Lấy dữ liệu (CHỈ BÀI TIẾNG VIỆT)
+print("Đang lấy dữ liệu bài hát tiếng Việt từ MongoDB...")
+query = {
+    "lyrics.full_text": {"$exists": True},
+    "metadata.language": "vi"  # Chỉ lấy bài tiếng Việt
+}
 tracks = list(tracks_col.find(query))
 
 # 4. CHUNKING: Tách bài hát thành từng câu

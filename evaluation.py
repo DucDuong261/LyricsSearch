@@ -81,34 +81,10 @@ def extract_lyrics_at_timerange(synced_lrc, start_sec=60, end_sec=90):
 
 def detect_language(text):
     """
-    Phát hiện ngôn ngữ đơn giản dựa trên ký tự Unicode.
-    Phân loại: 'vietnamese', 'korean', 'japanese', 'english_or_other'
+    Phát hiện ngôn ngữ — Đơn giản hóa vì dataset chỉ chứa nhạc Tiếng Việt.
+    Giữ lại hàm này để tương thích ngược với các kết quả đánh giá cũ.
     """
-    if not text:
-        return "unknown"
-
-    # Đếm ký tự Vietnamese (có dấu)
-    vn_chars = set('àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ')
-    vn_count = sum(1 for c in text.lower() if c in vn_chars)
-
-    # Đếm ký tự Hangul (Korean)
-    kr_count = sum(1 for c in text if '\uac00' <= c <= '\ud7af' or '\u1100' <= c <= '\u11ff')
-
-    # Đếm ký tự Japanese (Hiragana + Katakana)
-    jp_count = sum(1 for c in text if '\u3040' <= c <= '\u30ff')
-
-    total = len(text)
-    if total == 0:
-        return "unknown"
-
-    if vn_count / total > 0.05:
-        return "vietnamese"
-    elif kr_count / total > 0.1:
-        return "korean"
-    elif jp_count / total > 0.1:
-        return "japanese"
-    else:
-        return "english_or_other"
+    return "vietnamese"
 
 
 # ==========================================
@@ -126,10 +102,11 @@ def evaluate_all_tracks():
     client = MongoClient(MONGO_URI)
     tracks_col = client[DB_NAME][COLLECTION_NAME]
 
-    # Lấy tất cả bài có cả ground truth và predicted text
+    # Lấy tất cả bài TIẾNG VIỆT có cả ground truth và predicted text
     query = {
         "lyrics.full_text": {"$exists": True, "$ne": None},
-        "lyrics.predicted_text": {"$exists": True, "$ne": None}
+        "lyrics.predicted_text": {"$exists": True, "$ne": None},
+        "metadata.language": "vi"  # Chỉ đánh giá bài tiếng Việt
     }
     tracks = list(tracks_col.find(query))
     print(f"\n[1/4] Tìm thấy {len(tracks)} bài hát có cả lời gốc và lời Whisper.")

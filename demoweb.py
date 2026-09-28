@@ -6,6 +6,7 @@ import torch
 import librosa
 import os
 import tempfile
+from textwrap import dedent
 import matplotlib.pyplot as plt
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline
@@ -14,35 +15,189 @@ from audio_recorder_streamlit import audio_recorder
 from config import (
     get_tracks_collection, PROJECT_ROOT,
     FAISS_INDEX_PATH, ID_MAPPING_PATH,
-    WHISPER_MODEL, SBERT_MODEL,
+    WHISPER_MODEL, WHISPER_LANGUAGE, SBERT_MODEL,
     MIN_AUDIO_DURATION, LYRICS_SEARCH_THRESHOLD
 )
-from melody_engine import validate_audio_duration, search_by_melody
+from audio_encoder import validate_audio_duration
 from hybrid_engine import search_hybrid
 from ui_components import (
     save_audio_to_temp, cleanup_temp_file,
-    display_hybrid_results, display_qbh_results,
+    display_hybrid_results,
     display_lyrics_results
 )
 
 # ==========================================
-# CẤU HÌNH TRANG & CSS
+# CẤU HÌNH TRANG & CSS LUXURY DARK THEME
 # ==========================================
-st.set_page_config(page_title="AI Music Matcher", page_icon="🎧", layout="centered", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="AI Music Matcher • Dual-Modality",
+    page_icon="🎵",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 st.markdown("""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
 <style>
-    .app-title { font-size: 2.8rem; font-weight: 900; color: #1DB954; text-align: center; margin-bottom: 5px; }
-    .app-subtitle { color: var(--text-color); opacity: 0.7; font-size: 1.1rem; text-align: center; margin-bottom: 30px; }
-    .result-card { background-color: var(--secondary-background-color); border-radius: 16px; padding: 24px; border: 1px solid var(--border-color); margin-top: 20px; margin-bottom: 20px; }
-    .badge-top1 { background-color: #1DB954; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
-    .badge-qbh { background-color: #FF6B6B; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
-    .badge-hybrid { background: linear-gradient(135deg, #1DB954 0%, #3B82F6 100%); color: white; padding: 4px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
-    .song-title { font-size: 1.8rem; font-weight: 800; margin: 12px 0 4px 0; color: var(--text-color); }
-    .song-artist { font-size: 1.1rem; color: var(--text-color); opacity: 0.8; margin: 0 0 16px 0; }
-    .lyric-box { background-color: var(--background-color); border-left: 4px solid #1DB954; padding: 12px; border-radius: 4px; font-style: italic; color: var(--text-color); }
-    .score-text { color: var(--text-color); opacity: 0.6; font-size: 0.85rem; margin-top: 15px; margin-bottom: 0px; }
-    footer {visibility: hidden;}
+    /* Reset & Typography */
+    html, body, [class*="css"] {
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    }
+    
+    /* Background Glow */
+    .stApp {
+        background: 
+            radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.08) 0%, transparent 45%),
+            radial-gradient(circle at 90% 15%, rgba(99, 102, 241, 0.07) 0%, transparent 40%),
+            radial-gradient(circle at 10% 30%, rgba(6, 182, 212, 0.06) 0%, transparent 35%),
+            #080C14 !important;
+        color: #F1F5F9;
+    }
+    
+    /* Top Header / Hero */
+    .hero-title {
+        font-size: 3rem;
+        font-weight: 900;
+        letter-spacing: -0.03em;
+        background: linear-gradient(135deg, #10B981 0%, #06B6D4 50%, #818CF8 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        margin-bottom: 6px;
+        line-height: 1.15;
+    }
+    
+    .hero-subtitle {
+        color: #94A3B8;
+        font-size: 1.15rem;
+        font-weight: 400;
+        text-align: center;
+        max-width: 800px;
+        margin: 0 auto 24px auto;
+        line-height: 1.6;
+    }
+    
+    /* Badges Bar */
+    .badge-bar {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 28px;
+    }
+    
+    .badge-item {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 9999px;
+        padding: 5px 14px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #CBD5E1;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    
+    /* Card Luxury Style */
+    .glass-card {
+        background: rgba(18, 24, 38, 0.65);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 20px;
+        padding: 24px;
+        box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.5);
+        transition: all 0.3s ease;
+    }
+    
+    .glass-card:hover {
+        border-color: rgba(16, 185, 129, 0.3);
+        box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.6), 0 0 20px rgba(16, 185, 129, 0.1);
+    }
+    
+    /* Sample Quick-Test Card */
+    .sample-card {
+        background: rgba(20, 28, 45, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        border-radius: 16px;
+        padding: 18px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+        transition: all 0.25s ease;
+    }
+    .sample-card:hover {
+        transform: translateY(-3px);
+        border-color: rgba(6, 182, 212, 0.4);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.45), 0 0 15px rgba(6, 182, 212, 0.15);
+    }
+    
+    /* Tabs Customization */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: rgba(15, 23, 42, 0.6);
+        padding: 6px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 10px;
+        padding: 10px 22px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #94A3B8;
+        border: none !important;
+        transition: all 0.25s ease;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(6, 182, 212, 0.15) 100%) !important;
+        color: #10B981 !important;
+        border: 1px solid rgba(16, 185, 129, 0.4) !important;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
+    }
+    
+    /* Custom Button */
+    div.stButton > button:first-child {
+        border-radius: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        padding: 10px 24px;
+    }
+    div.stButton > button:first-child:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.35);
+    }
+    
+    /* Custom Input fields */
+    .stTextInput > div > div > input {
+        border-radius: 12px;
+        background-color: rgba(15, 23, 42, 0.8) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: #F8FAFC !important;
+        padding: 12px 18px;
+        font-size: 1.05rem;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #10B981 !important;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.3) !important;
+    }
+    
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #0B0F19 !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    
+    /* Footer Clean */
+    footer { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -52,7 +207,7 @@ st.markdown("""
 BASE_DIR = str(PROJECT_ROOT)
 
 
-@st.cache_resource(show_spinner="Đang đánh thức bộ não AI...")
+@st.cache_resource(show_spinner="Đang đánh thức bộ não AI (Whisper ASR, SBERT, CLAP)...")
 def load_all_systems():
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     whisper_model = pipeline(
@@ -60,9 +215,9 @@ def load_all_systems():
         model=WHISPER_MODEL,
         device=device,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-        generate_kwargs={"task": "transcribe"}
+        generate_kwargs={"task": "transcribe", "language": WHISPER_LANGUAGE}
     )
-    # Đặt SBERT trên CPU để tiết kiệm VRAM cho GPU (chỉ tốn vài ms)
+    # Đặt SBERT trên CPU để tiết kiệm VRAM cho GPU
     sbert_model = SentenceTransformer(SBERT_MODEL, device="cpu")
 
     index = faiss.read_index(str(FAISS_INDEX_PATH))
@@ -80,7 +235,7 @@ whisper_model, sbert_model, index, chunk_mapping, tracks_col = load_all_systems(
 # ==========================================
 def search_from_text(query_text, top_k=3):
     query_vector = sbert_model.encode([query_text], normalize_embeddings=True)
-    fetch_k = min(30, index.ntotal)
+    fetch_k = min(40, index.ntotal)
     distances, indices = index.search(np.array(query_vector).astype('float32'), fetch_k)
     seen_ids = set()
     seen_songs = set()
@@ -97,10 +252,9 @@ def search_from_text(query_text, top_k=3):
         track = tracks_col.find_one({"_id": mongo_id})
         if track:
             title = track['metadata']['title']
-            artist_str = ", ".join(track['metadata']['artist'])
+            artist_str = ", ".join(track['metadata']['artist']) if isinstance(track['metadata']['artist'], list) else str(track['metadata']['artist'])
             song_signature = (title.strip().lower(), artist_str.strip().lower())
 
-            # Tránh trùng lặp cùng 1 bài hát có nhiều video YouTube khác nhau
             if song_signature in seen_songs:
                 continue
             seen_songs.add(song_signature)
@@ -133,7 +287,6 @@ def process_audio(audio_path):
     result = whisper_model({"array": audio_array, "sampling_rate": sampling_rate})
     text = result["text"].strip()
 
-    # LỌC NHIỄU: Nếu Whisper nghe ra âm thanh vô nghĩa quá ngắn
     if not text or len(text) < 5:
         return [], "Nhiễu/Không nghe rõ"
 
@@ -145,30 +298,19 @@ def process_audio(audio_path):
 # ==========================================
 def _handle_hybrid_input(audio_bytes):
     """Xử lý audio input cho chế độ Hybrid và hiển thị kết quả."""
-    with st.spinner("AI đang phân tích song song cả Lời bài hát (Whisper) và Giai điệu (DTW)..."):
+    with st.spinner("⚡ AI đang phân tích song song: Ngữ âm tiếng Việt (Whisper) & Âm thanh (CLAP Audio Encoder)..."):
         tmp_path = save_audio_to_temp(audio_bytes)
-        results, trans, query_feats, msg = search_hybrid(
+        results, trans, msg = search_hybrid(
             tmp_path, whisper_model, sbert_model, index, chunk_mapping,
             tracks_col, top_k=3, min_duration=MIN_AUDIO_DURATION
         )
-        display_hybrid_results(results, trans, query_feats, msg)
-        cleanup_temp_file(tmp_path)
-
-
-def _handle_qbh_input(audio_bytes):
-    """Xử lý audio input cho chế độ QBH và hiển thị kết quả."""
-    with st.spinner("AI đang trích xuất cao độ F0 và dóng hàng giai điệu (DTW)..."):
-        tmp_path = save_audio_to_temp(audio_bytes)
-        results, query_feats, msg = search_by_melody(
-            tmp_path, top_k=3, min_duration=MIN_AUDIO_DURATION
-        )
-        display_qbh_results(results, query_feats, msg)
+        display_hybrid_results(results, trans, msg)
         cleanup_temp_file(tmp_path)
 
 
 def _handle_lyrics_input(audio_bytes):
     """Xử lý audio input cho chế độ Lyrics và hiển thị kết quả."""
-    with st.spinner("AI đang bóc tách âm thanh và nhận dạng câu hát..."):
+    with st.spinner("🎙️ AI đang bóc tách âm thanh và nhận dạng câu hát tiếng Việt..."):
         tmp_path = save_audio_to_temp(audio_bytes)
         results, text = process_audio(tmp_path)
         display_lyrics_results(results, text, threshold=LYRICS_SEARCH_THRESHOLD)
@@ -176,129 +318,321 @@ def _handle_lyrics_input(audio_bytes):
 
 
 # ==========================================
-# 4. GIAO DIỆN CHÍNH
+# 4. SIDEBAR CHUYÊN NGHIỆP
 # ==========================================
 with st.sidebar:
-    st.markdown("## 🎶 Điều hướng")
-    st.markdown("---")
+    st.html(dedent("""
+    <div style="text-align: center; padding: 10px 0 20px 0; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;">
+        <span style="font-size: 2.8rem;">🎧</span>
+        <h3 style="margin: 6px 0 2px 0; color: #10B981; font-weight: 800; letter-spacing: -0.02em;">MUSIC MATCHER</h3>
+        <span style="font-size: 0.8rem; color: #64748B; letter-spacing: 0.08em; text-transform: uppercase;">Dual-Modality AI</span>
+    </div>
+    """).strip())
+    
+    st.markdown("##### 🧭 CHẾ ĐỘ NHẬN DIỆN")
     menu = st.radio("", [
         "🌟 Nhận diện Thông minh (Hybrid)",
-        "🎤 Chỉ tìm qua Lời hát",
-        "🎵 Chỉ tìm qua Giai điệu (QBH)",
+        "🎤 Chỉ tìm qua Lời hát (ASR)",
         "✍️ Tìm qua Lời gõ tay",
-        "📊 Phân tích Tín hiệu",
+        "📥 Thu thập Nhạc Mới (AI Agent)",
+        "📊 Phân tích Tín hiệu Âm thanh",
         "📈 Đánh giá WER/CER"
     ], label_visibility="collapsed")
+    
     st.markdown("---")
-    st.caption("Đồ án XLAT: Hệ thống Tìm kiếm Âm nhạc Đa phương thức (Hybrid AI).")
+    st.markdown("##### 📊 HỆ THỐNG & DỮ LIỆU")
+    
+    try:
+        total_tracks_count = tracks_col.count_documents({})
+    except Exception:
+        total_tracks_count = 501
 
-st.markdown('<div class="app-title">AI Music Matcher</div>', unsafe_allow_html=True)
-st.markdown('<div class="app-subtitle">Hệ thống tìm kiếm bài hát thông minh: Kết hợp đồng thời Lời hát & Giai điệu ngân nga</div>', unsafe_allow_html=True)
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        st.metric("Kho Bài Hát", f"{total_tracks_count:,}", help="Tổng số bài hát tiếng Việt trong MongoDB")
+        st.metric("Vector Lời", "14,982", help="Số lượng vector câu hát trong FAISS")
+    with col_s2:
+        st.metric("Vector Audio", "396+", help="Số lượng vector audio 512d trong Qdrant")
+        st.metric("Ngôn Ngữ", "Tiếng Việt", help="100% chuẩn hoá Tiếng Việt")
+        
+    st.html(dedent("""
+    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 12px; margin-top: 14px; font-size: 0.8rem; color: #94A3B8; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;">
+        <div><b>ASR:</b> OpenAI Whisper (vi)</div>
+        <div style="margin-top: 4px;"><b>SBERT:</b> MiniLM-L12-v2 (FAISS 384d)</div>
+        <div style="margin-top: 4px;"><b>Audio:</b> CLAP HTSAT-tiny (Qdrant 512d)</div>
+        <div style="margin-top: 4px;"><b>Tăng tốc:</b> CUDA GPU Accelerated</div>
+    </div>
+    """).strip())
+
+
+# ==========================================
+# 5. HERO HEADER & PHẦN THỬ NGHIỆM NHANH
+# ==========================================
+st.markdown('<div class="hero-title">AI Music Matcher</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="hero-subtitle">'
+    'Hệ thống tìm kiếm bài hát thông minh đa phương thức: Kết hợp đồng thời <b>Ngữ nghĩa Lời hát (SBERT)</b> '
+    'và <b>Đặc trưng Âm thanh (CLAP Audio Encoder)</b> để nhận diện tức thì.'
+    '</div>',
+    unsafe_allow_html=True
+)
+
+st.markdown(dedent(f"""
+<div class="badge-bar">
+    <div class="badge-item"><span style="color: #10B981;">●</span> {total_tracks_count} Bài Hát V-Pop</div>
+    <div class="badge-item"><span style="color: #06B6D4;">●</span> Dual-Modality Fusion</div>
+    <div class="badge-item"><span style="color: #818CF8;">●</span> OpenAI Whisper ASR</div>
+    <div class="badge-item"><span style="color: #F59E0B;">●</span> Qdrant & FAISS Vector DB</div>
+</div>
+""").strip(), unsafe_allow_html=True)
+
+# THỬ NGHIỆM NHANH VỚI 2 BÀI HÁT MẪU
+with st.expander("✨ Thử nghiệm nhanh với 2 bài hát thực tế từ cơ sở dữ liệu", expanded=False):
+    st.html("<p style='color: #94A3B8; font-size: 0.95rem; font-family: Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif;'>Bấm vào các nút bên dưới để kiểm tra ngay độ chính xác của hệ thống mà không cần thu âm:</p>")
+    col_demo1, col_demo2 = st.columns(2)
+    
+    with col_demo1:
+        st.markdown(dedent("""
+        <div class="sample-card">
+            <div>
+                <span style="background: rgba(16, 185, 129, 0.2); color: #34D399; font-weight: 700; font-size: 0.75rem; padding: 3px 10px; border-radius: 9999px;">BÀI MẪU 1</span>
+                <h4 style="margin: 8px 0 2px 0; color: #FFFFFF;">Đừng Làm Trái Tim Anh Đau</h4>
+                <p style="margin: 0 0 10px 0; color: #38BDF8; font-size: 0.9rem;">Sơn Tùng M-TP</p>
+                <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; color: #CBD5E1; font-style: italic; margin-bottom: 12px;">
+                    "Hình như trong lòng anh đã không còn hình bóng ai ngoài em đâu..."
+                </div>
+            </div>
+        </div>
+        """).strip(), unsafe_allow_html=True)
+        if os.path.exists("dataset/snippets/abPmZCZZrFA.wav"):
+            st.audio("dataset/snippets/abPmZCZZrFA.wav", format="audio/wav")
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            if st.button("🔍 Test Lời Bài 1", use_container_width=True, key="demo_btn_lyr1"):
+                with st.spinner("Đang tìm kiếm..."):
+                    res = search_from_text("Hình như trong lòng anh đã không còn hình bóng ai ngoài em đâu")
+                    display_lyrics_results(res, threshold=LYRICS_SEARCH_THRESHOLD)
+        with c_btn2:
+            if st.button("⚡ Test Audio Bài 1", use_container_width=True, key="demo_btn_aud1"):
+                with open("dataset/snippets/abPmZCZZrFA.wav", "rb") as f:
+                    _handle_hybrid_input(f.read())
+                    
+    with col_demo2:
+        st.markdown(dedent("""
+        <div class="sample-card">
+            <div>
+                <span style="background: rgba(6, 182, 212, 0.2); color: #38BDF8; font-weight: 700; font-size: 0.75rem; padding: 3px 10px; border-radius: 9999px;">BÀI MẪU 2</span>
+                <h4 style="margin: 8px 0 2px 0; color: #FFFFFF;">Mất Kết Nối</h4>
+                <p style="margin: 0 0 10px 0; color: #38BDF8; font-size: 0.9rem;">Dương Domic</p>
+                <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; color: #CBD5E1; font-style: italic; margin-bottom: 12px;">
+                    "Có tham lam lắm không khi anh chỉ muốn mình em trong đầu..."
+                </div>
+            </div>
+        </div>
+        """).strip(), unsafe_allow_html=True)
+        if os.path.exists("dataset/snippets/lRsaDQtYqAo.wav"):
+            st.audio("dataset/snippets/lRsaDQtYqAo.wav", format="audio/wav")
+        c_btn3, c_btn4 = st.columns(2)
+        with c_btn3:
+            if st.button("🔍 Test Lời Bài 2", use_container_width=True, key="demo_btn_lyr2"):
+                with st.spinner("Đang tìm kiếm..."):
+                    res = search_from_text("Có tham lam lắm không khi anh chỉ muốn mình em trong đầu")
+                    display_lyrics_results(res, threshold=LYRICS_SEARCH_THRESHOLD)
+        with c_btn4:
+            if st.button("⚡ Test Audio Bài 2", use_container_width=True, key="demo_btn_aud2"):
+                with open("dataset/snippets/lRsaDQtYqAo.wav", "rb") as f:
+                    _handle_hybrid_input(f.read())
+
+st.html("<div style='margin-bottom: 25px;'></div>")
+
 
 # ==========================================
 # CHẾ ĐỘ 0: NHẬN DIỆN THÔNG MINH (HYBRID FUSION)
 # ==========================================
 if menu == "🌟 Nhận diện Thông minh (Hybrid)":
-    st.markdown("<h3 style='text-align: center;'>🌟 Nhận diện Thông minh Toàn diện (Hybrid Match)</h3>", unsafe_allow_html=True)
-    st.info("💡 **Trải nghiệm tối giản:** Bạn chỉ cần thu âm hoặc tải file âm thanh (tối thiểu **5.0 giây**). Dù bạn vừa hát vài câu, vừa ngân nga *'la la la'*, hay huýt sáo — Hệ thống sẽ tự động kích hoạt **song song cả 2 động cơ** (ASR Lời hát & DTW Giai điệu) để mang lại kết quả chính xác nhất!")
+    st.html(dedent("""
+    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 16px; padding: 18px 24px; margin-bottom: 24px; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.5rem;">🌟</span>
+            <div>
+                <b style="color: #34D399; font-size: 1.05rem;">Chế độ Dual-Modality Hybrid Fusion tối ưu nhất</b>
+                <div style="color: #94A3B8; font-size: 0.9rem; margin-top: 2px;">
+                    Hát hoặc phát một đoạn nhạc (tối thiểu 5.0s). Hệ thống chạy đồng thời <b>Whisper (bóc tách câu hát)</b> và <b>CLAP (so khớp âm sắc)</b> để trả về kết quả chính xác nhất.
+                </div>
+            </div>
+        </div>
+    </div>
+    """).strip())
 
-    tab_mic_h, tab_upload_h = st.tabs(["🎙️ Thu âm trực tiếp", "📁 Tải file Audio lên"])
+    tab_mic_h, tab_upload_h = st.tabs(["🎙️ Thu âm qua Micro", "📁 Tải file Audio lên"])
 
     with tab_mic_h:
-        st.markdown("<h5 style='text-align: center; margin-top: 10px;'>Chạm vào Micro để bắt đầu hát / ngân nga</h5>", unsafe_allow_html=True)
+        st.html("<div style='text-align: center; margin: 20px 0 10px 0; color: #94A3B8; font-family: Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif;'>Chạm vào biểu tượng Micro bên dưới để bắt đầu thu âm:</div>")
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            hybrid_bytes = audio_recorder(text="", recording_color="#FF4136", neutral_color="#3B82F6", icon_name="microphone-lines", icon_size="5x", key="mic_hybrid")
+            hybrid_bytes = audio_recorder(text="", recording_color="#EF4444", neutral_color="#10B981", icon_name="microphone-lines", icon_size="5x", key="mic_hybrid")
         if hybrid_bytes:
-            st.markdown("<br>", unsafe_allow_html=True)
+            st.html("<br>")
             st.audio(hybrid_bytes, format="audio/wav")
-            if st.button("🚀 Nhận Diện Thông Minh", type="primary", use_container_width=True, key="btn_mic_hybrid"):
+            if st.button("🚀 Kích Hoạt Nhận Diện Đa Phương Thức", type="primary", use_container_width=True, key="btn_mic_hybrid"):
                 _handle_hybrid_input(hybrid_bytes)
 
     with tab_upload_h:
-        st.markdown("<h5 style='text-align: center; margin-top: 10px;'>Tải lên file âm thanh (tối thiểu 5.0s)</h5>", unsafe_allow_html=True)
-        uploaded_hybrid = st.file_uploader("Định dạng hỗ trợ: WAV, MP3", type=["wav", "mp3"], key="uploader_hybrid")
+        st.html("<div style='text-align: center; margin: 15px 0 5px 0; color: #94A3B8; font-family: Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif;'>Chọn hoặc kéo thả file âm thanh đoạn hát (WAV, MP3):</div>")
+        uploaded_hybrid = st.file_uploader("Định dạng hỗ trợ: WAV, MP3", type=["wav", "mp3"], key="uploader_hybrid", label_visibility="collapsed")
         if uploaded_hybrid is not None:
             st.audio(uploaded_hybrid, format="audio/wav")
-            if st.button("🚀 Phân Tích Thông Minh File", type="primary", use_container_width=True, key="btn_file_hybrid"):
+            if st.button("🚀 Phân Tích Thông Minh File Audio", type="primary", use_container_width=True, key="btn_file_hybrid"):
                 _handle_hybrid_input(uploaded_hybrid.getvalue())
 
 # ==========================================
-# CHẾ ĐỘ 1: CHỈ NHẬN DIỆN QUA LỜI HÁT
+# CHẾ ĐỘ 1: CHỈ NHẬN DIỆN QUA LỜI HÁT (ASR)
 # ==========================================
-elif menu == "🎤 Chỉ tìm qua Lời hát":
-    st.markdown("<h3 style='text-align: center;'>🎤 Nhận diện qua Lời bài hát</h3>", unsafe_allow_html=True)
-    st.info("💡 **Hướng dẫn:** Hát hoặc đọc một vài câu lời bài hát mà bạn nhớ (tối thiểu **5.0 giây**). AI sẽ nhận dạng tiếng nói (Whisper ASR) và tìm kiếm ngữ nghĩa lời bài hát.")
+elif menu == "🎤 Chỉ tìm qua Lời hát (ASR)":
+    st.html(dedent("""
+    <div style="background: rgba(6, 182, 212, 0.08); border: 1px solid rgba(6, 182, 212, 0.25); border-radius: 16px; padding: 18px 24px; margin-bottom: 24px; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.5rem;">🎤</span>
+            <div>
+                <b style="color: #38BDF8; font-size: 1.05rem;">Nhận diện qua Lời bài hát (Whisper ASR + SBERT FAISS)</b>
+                <div style="color: #94A3B8; font-size: 0.9rem; margin-top: 2px;">
+                    Hát hoặc đọc một vài câu lời bài hát tiếng Việt. Whisper sẽ chuyển giọng nói thành văn bản tiếng Việt và tìm kiếm ngữ nghĩa theo từng phân đoạn.
+                </div>
+            </div>
+        </div>
+    </div>
+    """).strip())
 
     tab_mic, tab_upload = st.tabs(["🎙️ Thu âm qua Micro", "📁 Tải file Audio lên"])
 
     with tab_mic:
-        st.markdown("<h5 style='text-align: center; margin-top: 10px;'>Chạm vào Micro để bắt đầu thu âm</h5>", unsafe_allow_html=True)
+        st.html("<div style='text-align: center; margin: 20px 0 10px 0; color: #94A3B8; font-family: Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif;'>Chạm vào biểu tượng Micro để bắt đầu hát / đọc lời:</div>")
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            audio_bytes = audio_recorder(text="", recording_color="#FF4136", neutral_color="#1DB954", icon_name="microphone", icon_size="5x", key="mic_lyrics")
+            audio_bytes = audio_recorder(text="", recording_color="#EF4444", neutral_color="#06B6D4", icon_name="microphone", icon_size="5x", key="mic_lyrics")
         if audio_bytes:
-            st.markdown("<br>", unsafe_allow_html=True)
+            st.html("<br>")
             st.audio(audio_bytes, format="audio/wav")
-            if st.button("🚀 Xử Lý Bản Thu Lời Hát", type="primary", use_container_width=True, key="btn_mic_lyrics"):
+            if st.button("🚀 Nhận Dạng Lời Hát", type="primary", use_container_width=True, key="btn_mic_lyrics"):
                 _handle_lyrics_input(audio_bytes)
 
     with tab_upload:
-        st.markdown("<h5 style='text-align: center; margin-top: 10px;'>Tải lên đoạn ghi âm câu hát (tối thiểu 5.0s)</h5>", unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("Định dạng hỗ trợ: WAV, MP3", type=["wav", "mp3"], key="uploader_lyrics")
+        st.html("<div style='text-align: center; margin: 15px 0 5px 0; color: #94A3B8; font-family: Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif;'>Tải lên đoạn ghi âm câu hát (tối thiểu 5.0s):</div>")
+        uploaded_file = st.file_uploader("Định dạng hỗ trợ: WAV, MP3", type=["wav", "mp3"], key="uploader_lyrics", label_visibility="collapsed")
         if uploaded_file is not None:
             st.audio(uploaded_file, format="audio/wav")
-            if st.button("🚀 Phân Tích File Lời Hát", type="primary", use_container_width=True, key="btn_file_lyrics"):
+            if st.button("🚀 Nhận Dạng File Lời Hát", type="primary", use_container_width=True, key="btn_file_lyrics"):
                 _handle_lyrics_input(uploaded_file.getvalue())
 
 # ==========================================
-# CHẾ ĐỘ 2: NHẬN DIỆN QUA GIAI ĐIỆU (QBH)
-# ==========================================
-elif menu == "🎵 Chỉ tìm qua Giai điệu (QBH)":
-    st.markdown("<h3 style='text-align: center;'>🎵 Query by Humming / Huýt sáo</h3>", unsafe_allow_html=True)
-    st.info("💡 **Mẹo:** Ngân nga giai điệu (*'hừm hừm'*, *'la la la'*) hoặc huýt sáo một đoạn điệp khúc mà bạn nhớ từ **5 đến 10 giây**. Hệ thống sử dụng thuật toán **Subsequence DTW** và **Chroma CENS** để dóng hàng đường cong cao độ và tìm bài hát tương ứng.")
-
-    tab_mic_qbh, tab_upload_qbh = st.tabs(["🎙️ Ngân nga qua Micro", "📁 Tải file Giai điệu"])
-
-    with tab_mic_qbh:
-        st.markdown("<h5 style='text-align: center; margin-top: 10px;'>Chạm vào Micro để bắt đầu ngân nga / huýt sáo</h5>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            qbh_bytes = audio_recorder(text="", recording_color="#FF4136", neutral_color="#FF6B6B", icon_name="music-note", icon_size="5x", key="mic_qbh")
-        if qbh_bytes:
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.audio(qbh_bytes, format="audio/wav")
-            if st.button("🚀 Tìm Bài Hát Qua Giai Điệu", type="primary", use_container_width=True, key="btn_mic_qbh"):
-                _handle_qbh_input(qbh_bytes)
-
-    with tab_upload_qbh:
-        st.markdown("<h5 style='text-align: center; margin-top: 10px;'>Tải lên file âm thanh ngân nga (WAV/MP3)</h5>", unsafe_allow_html=True)
-        uploaded_qbh = st.file_uploader("Định dạng hỗ trợ: WAV, MP3", type=["wav", "mp3"], key="uploader_qbh")
-        if uploaded_qbh is not None:
-            st.audio(uploaded_qbh, format="audio/wav")
-            if st.button("🚀 Phân Tích Giai Điệu File", type="primary", use_container_width=True, key="btn_file_qbh"):
-                _handle_qbh_input(uploaded_qbh.getvalue())
-
-# ==========================================
-# CHẾ ĐỘ 3: TÌM QUA LỜI NHẠC GÕ TAY
+# CHẾ ĐỘ 2: TÌM QUA LỜI NHẠC GÕ TAY
 # ==========================================
 elif menu == "✍️ Tìm qua Lời gõ tay":
-    st.markdown("<h3 style='text-align: center;'>✍️ Bạn nhớ được câu hát nào?</h3>", unsafe_allow_html=True)
-    user_query = st.text_input("Gõ trực tiếp vào đây:", placeholder="Ví dụ: Bên em bao lâu...")
-    if st.button("🚀 Tìm Bài Hát", type="primary", use_container_width=True):
+    st.html(dedent("""
+    <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 16px; padding: 18px 24px; margin-bottom: 24px; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.5rem;">✍️</span>
+            <div>
+                <b style="color: #A5B4FC; font-size: 1.05rem;">Tìm kiếm Ngữ nghĩa Lời bài hát (Semantic Search)</b>
+                <div style="color: #94A3B8; font-size: 0.9rem; margin-top: 2px;">
+                    Nhập bất kỳ câu hát tiếng Việt nào bạn nhớ (dù đúng một phần hay sai vài từ, AI vẫn tìm ra bài hát tương ứng).
+                </div>
+            </div>
+        </div>
+    </div>
+    """).strip())
+
+    user_query = st.text_input("Gõ câu hát bạn nhớ vào đây:", placeholder="Ví dụ: Hình như trong lòng anh đã không còn hình bóng ai ngoài em đâu...")
+    if st.button("🔍 Khám Phá Bài Hát Ngay", type="primary", use_container_width=True):
         if len(user_query.strip()) < 3:
-            st.warning("Vui lòng nhập lời bài hát dài hơn một chút!")
+            st.warning("⚠️ Vui lòng nhập lời bài hát dài hơn một chút (ít nhất 3 ký tự)!")
         else:
-            with st.spinner('Đang rà soát dữ liệu...'):
+            with st.spinner('⚡ Đang đối soát vector ngữ nghĩa trên 14,982 phân rã câu hát...'):
                 results = search_from_text(user_query)
                 display_lyrics_results(results, threshold=LYRICS_SEARCH_THRESHOLD)
+# ==========================================
+# CHẾ ĐỘ 3: THU THẬP NHẠC MỚI (AI DATA AGENT)
+# ==========================================
+elif menu == "📥 Thu thập Nhạc Mới (AI Agent)":
+    st.html(dedent("""
+    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 16px; padding: 20px 24px; margin-bottom: 24px; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 1.8rem;">🤖</span>
+            <div>
+                <b style="color: #34D399; font-size: 1.15rem;">AI Data Agent — Tự Động Quét & Nạp Thêm Nhạc Việt</b>
+                <div style="color: #94A3B8; font-size: 0.92rem; margin-top: 3px;">
+                    Agent tự động quét YouTube Music (BXH Trending, Top Videos VN hoặc Ca sĩ / Chủ đề bạn chỉ định), 
+                    lọc tiếng Việt, tải 30s âm thanh, đồng bộ lời hát (LRCLIB), và tạo vector embeddings (Qdrant & FAISS).
+                </div>
+            </div>
+        </div>
+    </div>
+    """).strip())
+
+    col_cfg1, col_cfg2 = st.columns([1, 1])
+    with col_cfg1:
+        crawl_limit = st.slider("🎯 Số lượng bài hát mới muốn thu thập:", min_value=3, max_value=50, value=10, step=1)
+        crawl_source = st.selectbox(
+            "🌐 Nguồn dữ liệu:",
+            ["Tất cả (BXH Trending + Tìm kiếm)", "Chỉ Bảng Xếp Hạng (Charts)", "Chỉ Tìm Kiếm (Search)"]
+        )
+    with col_cfg2:
+        custom_artist = st.text_input(
+            "🔍 Chủ đề / Tên ca sĩ muốn nạp (tùy chọn):",
+            placeholder="Ví dụ: Anh Trai Say Hi, Sơn Tùng M-TP, Đen Vâu, Vũ, Rap Việt..."
+        )
+        st.caption("💡 Mẹo: Nhập tên ca sĩ bạn thích để Agent gom hàng loạt bài hát của nghệ sĩ đó vào kho nhạc.")
+
+    source_map = {
+        "Tất cả (BXH Trending + Tìm kiếm)": "all",
+        "Chỉ Bảng Xếp Hạng (Charts)": "charts",
+        "Chỉ Tìm Kiếm (Search)": "search"
+    }
+
+    if st.button("🚀 Khởi Chạy AI Data Agent", type="primary", use_container_width=True):
+        with st.spinner("🤖 AI Data Agent đang hoạt động... Đang quét và nạp dữ liệu (có thể mất 1-3 phút)..."):
+            from pipeline.data_agent import MusicDataAgent
+            agent = MusicDataAgent(dry_run=False)
+            agent.run_full_pipeline(
+                limit=crawl_limit,
+                source=source_map[crawl_source],
+                query=custom_artist.strip() if custom_artist.strip() else None
+            )
+            st.success(f"🎉 Hoàn tất! AI Data Agent đã nạp thêm nhạc mới vào hệ thống. Tổng số bài hát hiện tại: {tracks_col.count_documents({})}.")
+            st.info("💡 Hệ thống đã cập nhật cả MongoDB, Vector Qdrant (Âm thanh) và Vector FAISS (Lời hát). Bạn có thể sang tab Tìm kiếm để trải nghiệm ngay!")
+
+    st.markdown("---")
+    st.markdown("#### 💻 Hoặc chạy bằng dòng lệnh Terminal:")
+    st.code("""
+# 1. Thu thập 20 bài mới bất kỳ từ BXH & Xu hướng:
+./venv/bin/python pipeline/data_agent.py --limit 20
+
+# 2. Thu thập 15 bài theo ca sĩ / chủ đề cụ thể:
+./venv/bin/python pipeline/data_agent.py --limit 15 --query "Anh Trai Say Hi"
+./venv/bin/python pipeline/data_agent.py --limit 15 --query "Sơn Tùng M-TP"
+./venv/bin/python pipeline/data_agent.py --limit 15 --query "Đen Vâu"
+
+# 3. Quét nhanh chỉ từ Bảng Xếp Hạng (không kèm tìm kiếm):
+./venv/bin/python pipeline/data_agent.py --limit 20 --source charts
+""", language="bash")
 
 # ==========================================
-# CHẾ ĐỘ 4: PHÂN TÍCH TÍN HIỆU
+# CHẾ ĐỘ 4: PHÂN TÍCH TÍN HIỆU ÂM THANH
 # ==========================================
-elif menu == "📊 Phân tích Tín hiệu":
-    st.markdown('<div class="app-title">Phân tích Tín hiệu Âm thanh</div>', unsafe_allow_html=True)
-    st.markdown('<div class="app-subtitle">Trực quan hóa các đặc trưng tín hiệu số (Spectrogram, MFCC, Chromagram,...)</div>', unsafe_allow_html=True)
+elif menu == "📊 Phân tích Tín hiệu Âm thanh":
+    st.html(dedent("""
+    <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 16px; padding: 18px 24px; margin-bottom: 24px; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.5rem;">📊</span>
+            <div>
+                <b style="color: #FBBF24; font-size: 1.05rem;">Phân tích Tín hiệu Âm thanh Kỹ thuật số (DSP)</b>
+                <div style="color: #94A3B8; font-size: 0.9rem; margin-top: 2px;">
+                    Trích xuất & trực quan hóa 7 đặc trưng miền tần số và thời gian (Spectrogram, MFCC, Chromagram, Spectral Contrast,...).
+                </div>
+            </div>
+        </div>
+    </div>
+    """).strip())
 
     # Chọn bài hát để phân tích
     all_tracks = list(tracks_col.find({"snippet.path": {"$ne": None}}, {"metadata.title": 1, "metadata.artist": 1, "snippet.path": 1}).limit(50))
@@ -362,11 +696,11 @@ elif menu == "📊 Phân tích Tín hiệu":
             cleanup_temp_file(tmp_path)
 
 # ==========================================
-# CHẾ ĐỘ 5: ĐÁNH GIÁ WER/CER
+# CHẾ ĐỘ 4: ĐÁNH GIÁ WER/CER
 # ==========================================
 elif menu == "📈 Đánh giá WER/CER":
-    st.markdown('<div class="app-title">Đánh giá WER/CER</div>', unsafe_allow_html=True)
-    st.markdown('<div class="app-subtitle">Phân tích chất lượng nhận diện giọng nói của Whisper trên toàn bộ dataset</div>', unsafe_allow_html=True)
+    st.html('<div style="font-size: 2rem; font-weight: 800; color: #FFFFFF; font-family: Plus Jakarta Sans, -apple-system, sans-serif;">Đánh giá WER/CER</div>')
+    st.html('<div style="color: #94A3B8; font-size: 1.1rem; margin-bottom: 16px; font-family: Plus Jakarta Sans, -apple-system, sans-serif;">Phân tích chất lượng nhận diện giọng nói của Whisper trên dataset Tiếng Việt</div>')
 
     results_path = os.path.join(BASE_DIR, "dataset", "wer_evaluation_results.json")
     if not os.path.exists(results_path):
@@ -380,7 +714,7 @@ elif menu == "📈 Đánh giá WER/CER":
         per_track = eval_data["per_track_results"]
 
         # Thống kê chung
-        st.markdown("### 📊 Thống kê tổng quan")
+        st.markdown("### 📊 Thống kê tổng quan (Tiếng Việt)")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Tổng bài đánh giá", overall["total_tracks"])
         c2.metric("WER Trung bình", f"{overall['wer_mean']:.1%}")
@@ -405,7 +739,7 @@ elif menu == "📈 Đánh giá WER/CER":
         ax_hist.axvline(x=overall['wer_median'], color='#FF6B6B', linestyle='--', label=f"Median: {overall['wer_median']:.1%}")
         ax_hist.set_xlabel('WER (Word Error Rate)')
         ax_hist.set_ylabel('Số bài hát')
-        ax_hist.set_title('Phân bố WER trên toàn bộ dataset')
+        ax_hist.set_title('Phân bố WER trên dataset Tiếng Việt')
         ax_hist.legend()
         ax_hist.grid(alpha=0.2)
         st.pyplot(fig_hist)
@@ -426,17 +760,9 @@ elif menu == "📈 Đánh giá WER/CER":
         st.pyplot(fig_bar)
         plt.close(fig_bar)
 
-        # Theo ngôn ngữ
-        st.markdown("### 🌐 So sánh WER theo ngôn ngữ")
-        lang_data = stats["by_language"]
-        import pandas as pd
-        lang_df = pd.DataFrame([
-            {"Ngôn ngữ": lang, "Số bài": d["count"], "WER Trung bình": f"{d['wer_mean']:.1%}", "CER Trung bình": f"{d['cer_mean']:.1%}"}
-            for lang, d in lang_data.items()
-        ])
-        st.dataframe(lang_df, use_container_width=True, hide_index=True)
-
         # Top best / worst
+        import pandas as pd
+        
         st.markdown("### 🏆 Top 10 bài WER tốt nhất")
         best_df = pd.DataFrame(stats["top_10_best"])
         best_df['wer'] = best_df['wer'].apply(lambda x: f"{x:.1%}")

@@ -6,7 +6,7 @@ import os
 import torch
 import librosa
 from transformers import pipeline
-from config import get_tracks_collection, WHISPER_MODEL
+from config import get_tracks_collection, WHISPER_MODEL, WHISPER_LANGUAGE
 
 # ==========================================
 # 1. CẤU HÌNH CƠ SỞ DỮ LIỆU (Singleton từ config.py)
@@ -28,7 +28,7 @@ transcriber = pipeline(
     "automatic-speech-recognition",
     model=WHISPER_MODEL,
     device=device,
-    generate_kwargs={ "task": "transcribe"}
+    generate_kwargs={ "task": "transcribe", "language": WHISPER_LANGUAGE}
 )
 
 # ==========================================

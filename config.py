@@ -7,6 +7,7 @@ Nguyên tắc thiết kế:
   - Mọi biến môi trường, đường dẫn, tên model, hằng số đều khai báo TẠI ĐÂY.
   - Các module khác chỉ cần: from config import ...
   - MongoDB Client sử dụng Lazy Singleton Pattern (tạo 1 lần, dùng mãi mãi).
+  - Qdrant Client cũng sử dụng Lazy Singleton Pattern.
   - Luôn tìm đúng file .env nhờ PROJECT_ROOT (không phụ thuộc working directory).
 """
 
@@ -27,43 +28,58 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 # ==========================================
-# 2. DATABASE CONFIGURATION
+# 2. DATABASE CONFIGURATION — MONGODB
 # ==========================================
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME = os.getenv("DB_NAME", "lyrics_recognition")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "tracks")
 
 # ==========================================
-# 3. PATH CONSTANTS
+# 3. DATABASE CONFIGURATION — QDRANT (Audio Vectors)
+# ==========================================
+QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "audio_embeddings")
+
+# ==========================================
+# 4. PATH CONSTANTS
 # ==========================================
 DATASET_DIR = PROJECT_ROOT / "dataset"
 SNIPPETS_DIR = DATASET_DIR / "snippets"
 FAISS_INDEX_PATH = PROJECT_ROOT / "lyrics_db.index"
 ID_MAPPING_PATH = PROJECT_ROOT / "id_mapping.json"
-MELODY_DB_PATH = DATASET_DIR / "melody_database.pkl"
+AUDIO_INDEX_PATH = PROJECT_ROOT / "audio_db.index"  # Backup FAISS cho audio (nếu không dùng Qdrant)
 
 # ==========================================
-# 4. AI MODEL CONFIGURATION
+# 5. AI MODEL CONFIGURATION
 # ==========================================
 WHISPER_MODEL = "openai/whisper-small"
+WHISPER_LANGUAGE = "vi"  # Ép cứng nhận diện Tiếng Việt cho Whisper
 SBERT_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+CLAP_MODEL = "laion/larger_clap_music_and_speech"  # Audio Encoder cho nhánh audio embedding
 
 # ==========================================
-# 5. AUDIO PROCESSING PARAMETERS
+# 6. AUDIO PROCESSING PARAMETERS
 # ==========================================
 SAMPLE_RATE = 16000      # Tần số lấy mẫu chuẩn cho Whisper (16kHz)
+CLAP_SAMPLE_RATE = 48000 # Tần số lấy mẫu cho CLAP (48kHz)
 HOP_LENGTH = 512         # Số sample giữa 2 frame liên tiếp (STFT hop)
 MIN_AUDIO_DURATION = 5.0  # Thời lượng tối thiểu (giây) để hệ thống chấp nhận
 
 # ==========================================
-# 6. SEARCH PARAMETERS
+# 7. SEARCH PARAMETERS
 # ==========================================
 LYRICS_SEARCH_THRESHOLD = 0.60  # Ngưỡng tối thiểu cho kết quả tìm kiếm lyrics
 LYRICS_FETCH_K = 30             # Số lượng vector FAISS lấy ra để lọc
-HYBRID_AGREEMENT_BONUS = 0.08   # Điểm thưởng khi cả 2 nhánh đồng thuận
+AUDIO_SEARCH_LIMIT = 10         # Số lượng kết quả audio trả về từ Qdrant
+
+# Trọng số Hybrid Ranking
+HYBRID_WEIGHT_LYRICS = 0.55    # Trọng số nhánh Lyrics (SBERT + FAISS)
+HYBRID_WEIGHT_AUDIO = 0.45     # Trọng số nhánh Audio (CLAP + Qdrant)
+HYBRID_AGREEMENT_BONUS = 0.10  # Điểm thưởng khi cả 2 nhánh đồng thuận
 
 # ==========================================
-# 7. MONGODB CONNECTION — LAZY SINGLETON
+# 8. MONGODB CONNECTION — LAZY SINGLETON
 # ==========================================
 # Sử dụng Singleton Pattern: chỉ tạo 1 MongoClient cho toàn bộ ứng dụng.
 # Tránh tạo hàng chục connection riêng lẻ ở mỗi module (memory leak).
@@ -95,22 +111,45 @@ def get_tracks_collection():
 
 
 # ==========================================
-# 8. SELF-TEST (chạy trực tiếp để verify)
+# 9. QDRANT CONNECTION — LAZY SINGLETON
+# ==========================================
+_qdrant_client = None
+
+
+def get_qdrant_client():
+    """
+    Trả về QdrantClient Singleton.
+    Lần gọi đầu tiên sẽ khởi tạo connection, các lần sau trả về instance đã có.
+    """
+    global _qdrant_client
+    if _qdrant_client is None:
+        from qdrant_client import QdrantClient
+        _qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+    return _qdrant_client
+
+
+# ==========================================
+# 10. SELF-TEST (chạy trực tiếp để verify)
 # ==========================================
 if __name__ == "__main__":
     print("=" * 50)
     print("🔧 CONFIG MODULE — SELF-TEST")
     print("=" * 50)
-    print(f"  PROJECT_ROOT:     {PROJECT_ROOT}")
-    print(f"  MONGO_URI:        {MONGO_URI}")
-    print(f"  DB_NAME:          {DB_NAME}")
-    print(f"  COLLECTION_NAME:  {COLLECTION_NAME}")
-    print(f"  FAISS_INDEX_PATH: {FAISS_INDEX_PATH}")
-    print(f"  MELODY_DB_PATH:   {MELODY_DB_PATH}")
-    print(f"  SNIPPETS_DIR:     {SNIPPETS_DIR}")
-    print(f"  WHISPER_MODEL:    {WHISPER_MODEL}")
-    print(f"  SBERT_MODEL:      {SBERT_MODEL}")
-    print(f"  SAMPLE_RATE:      {SAMPLE_RATE}")
+    print(f"  PROJECT_ROOT:      {PROJECT_ROOT}")
+    print(f"  MONGO_URI:         {MONGO_URI}")
+    print(f"  DB_NAME:           {DB_NAME}")
+    print(f"  COLLECTION_NAME:   {COLLECTION_NAME}")
+    print(f"  QDRANT_HOST:       {QDRANT_HOST}:{QDRANT_PORT}")
+    print(f"  QDRANT_COLLECTION: {QDRANT_COLLECTION}")
+    print(f"  FAISS_INDEX_PATH:  {FAISS_INDEX_PATH}")
+    print(f"  AUDIO_INDEX_PATH:  {AUDIO_INDEX_PATH}")
+    print(f"  SNIPPETS_DIR:      {SNIPPETS_DIR}")
+    print(f"  WHISPER_MODEL:     {WHISPER_MODEL}")
+    print(f"  WHISPER_LANGUAGE:  {WHISPER_LANGUAGE}")
+    print(f"  SBERT_MODEL:       {SBERT_MODEL}")
+    print(f"  CLAP_MODEL:        {CLAP_MODEL}")
+    print(f"  SAMPLE_RATE:       {SAMPLE_RATE}")
+    print(f"  CLAP_SAMPLE_RATE:  {CLAP_SAMPLE_RATE}")
 
     # Test MongoDB connection
     try:
@@ -125,4 +164,13 @@ if __name__ == "__main__":
     client2 = get_mongo_client()
     assert client1 is client2, "Singleton bị tạo thêm instance!"
     print("  ✅ Singleton Pattern OK — Chỉ có 1 MongoClient duy nhất")
+
+    # Test Qdrant connection (optional)
+    try:
+        qc = get_qdrant_client()
+        collections = qc.get_collections()
+        print(f"  ✅ Qdrant OK — Collections: {[c.name for c in collections.collections]}")
+    except Exception as e:
+        print(f"  ⚠️ Qdrant chưa sẵn sàng (bỏ qua nếu chưa start Docker): {e}")
+
     print("\n" + "=" * 50)

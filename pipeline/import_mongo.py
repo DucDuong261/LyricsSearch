@@ -15,7 +15,7 @@ def import_data():
     tracks_col.create_index([
         ("metadata.title", TEXT),
         ("metadata.artist", TEXT)
-    ], name="text_search_index")
+    ], name="text_search_index", default_language="none", language_override="none")
     
     tracks_col.create_index([
         ("local_assets.status", ASCENDING)
