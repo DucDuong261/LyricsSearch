@@ -83,11 +83,25 @@ Thay vì làm thủ công từng bước, bạn có thể để **AI Data Agent*
 ./venv/bin/python pipeline/data_agent.py --limit 5 --dry-run
 ```
 
+### 3b. Chạy trên máy đã có sẵn MongoDB đầy đủ
+`lyrics_db.index` / `id_mapping.json` trong repo không khớp với kho nhạc trên máy (index đầy đủ vượt giới hạn 100MB của GitHub), nên sau khi clone cần build lại từ MongoDB:
+```bash
+python build_index_from_mongo.py         # Lyrics → FAISS (lyrics_db.index + id_mapping.json)
+python pipeline/build_audio_index.py     # Audio → CLAP → Qdrant
+```
+Cần sao lưu kho nhạc ra JSON: `python pipeline/export_mongo.py` (MongoDB → `dataset/dataset_processed.json`).
+
 ### 4. Khởi chạy ứng dụng Web (Streamlit)
 ```bash
 ./run_web.sh
 ```
 Truy cập trình duyệt tại: `http://localhost:8501`
+
+### 4b. Giao diện web mới (SPA tông xanh – đen)
+```bash
+./run_webapp.sh   # hoặc: python -m uvicorn webapp.server:app --port 8000
+```
+Truy cập trình duyệt tại: `http://localhost:8000`
 
 ### 5. Chạy demo qua dòng lệnh (CLI)
 ```bash

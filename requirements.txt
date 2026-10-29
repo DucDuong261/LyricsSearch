@@ -10,7 +10,7 @@ librosa>=0.10.1
 soundfile>=0.12.1
 
 # AI / ML
-numpy>=1.26.0,<2.0.0
+numpy
 torch
 torchaudio
 transformers>=4.38.0

@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+
+# Bí mật & file nhị phân lớn
+pipeline/cookies.txt
+pipeline/*.exe
+.claude/

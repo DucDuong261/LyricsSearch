@@ -4,6 +4,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import os
 import time
+import urllib.parse
 from ytmusicapi import YTMusic
 from config import get_tracks_collection
 
@@ -58,6 +59,20 @@ def is_vietnamese_track(title, artists):
             return True
     
     return False
+
+
+def extract_playlist_id(url_or_id):
+    """Tự động bóc tách Playlist ID từ đường link dài hoặc trả về nguyên bản nếu đã là ID."""
+    url_or_id = url_or_id.strip()
+    if not url_or_id:
+        return None
+
+    if "list=" in url_or_id:
+        parsed = urllib.parse.urlparse(url_or_id)
+        query_params = urllib.parse.parse_qs(parsed.query)
+        return query_params.get("list", [None])[0]
+
+    return url_or_id
 
 
 def fetch_ytmusic_playlist(playlist_id, min_year=2019):
@@ -139,11 +154,23 @@ def fetch_ytmusic_playlist(playlist_id, min_year=2019):
 # KHỐI CHẠY CHÍNH (MAIN ENTRY)
 # ==========================================
 if __name__ == "__main__":
-    # Thay vì 1 chuỗi, ta dùng 1 mảng (list) chứa nhiều ID
-    TARGET_PLAYLISTS = [
-        "PLdd6FdxsIcyfw8CIufr45y8Wx5dhSxaNG"# Playlist của bạn
-        
-    ]
+    # Đọc danh sách playlist từ sources.txt (mỗi dòng 1 link hoặc 1 ID)
+    txt_path = Path(__file__).resolve().parent / "sources.txt"
+    if not txt_path.exists():
+        print(f"LỖI: Không tìm thấy file '{txt_path.name}'!")
+        print("Vui lòng tạo file này và dán các link playlist vào (mỗi link 1 dòng).")
+        sys.exit(1)
+
+    TARGET_PLAYLISTS = []
+    with open(txt_path, "r", encoding="utf-8") as f:
+        for line in f:
+            p_id = extract_playlist_id(line)
+            if p_id and p_id not in TARGET_PLAYLISTS:
+                TARGET_PLAYLISTS.append(p_id)
+
+    if not TARGET_PLAYLISTS:
+        print("File txt trống hoặc không chứa link hợp lệ.")
+        sys.exit(1)
     
     print(f"=== BẮT ĐẦU CRAWL {len(TARGET_PLAYLISTS)} PLAYLISTS (CHỈ LỌC TIẾNG VIỆT) ===")
     

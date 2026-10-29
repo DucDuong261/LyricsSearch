@@ -36,15 +36,16 @@ def download_audio_snippet(video_id, output_path, start_time="01:00", end_time="
     url = f"https://www.youtube.com/watch?v={video_id}"
     ytdlp_bin = get_ytdlp_bin()
     
-    # Cấu trúc lệnh yt-dlp
+    # Cấu trúc lệnh yt-dlp đóng giả ứng dụng YouTube trên iPhone (iOS)
     command = [
         ytdlp_bin,
+        "--extractor-args", "youtube:client=ios", # Khai báo thiết bị là iOS
         "--quiet", "--no-warnings",
         "-f", "bestaudio",
         "--download-sections", f"*{start_time}-{end_time}",
         "--force-keyframes-at-cuts",
         "-x", "--audio-format", "wav",
-        "--postprocessor-args", "-ar 16000 -ac 1", # 16kHz, 1 channel (Mono)
+        "--postprocessor-args", "-ar 16000 -ac 1",
         "-o", output_path,
         url
     ]
@@ -72,14 +73,24 @@ def process_snippets():
     failed_count = 0
     
     for index, track in enumerate(valid_tracks):
-        video_id = track["metadata"]["video_id"]
-        title = track["metadata"]["title"]
+        # Dùng .get() để truy xuất an toàn, tránh bị crash KeyError nếu db thiếu trường
+        metadata = track.get("metadata", {})
+        
+        # Nếu không có video_id trong metadata, tự động lấy trường _id làm dự phòng
+        video_id = metadata.get("video_id") or track.get("_id")
+        title = metadata.get("title", "Không rõ tên bài hát")
+        
+        print(f"[{index+1}/{len(valid_tracks)}] Đang xử lý: {title}...", end="", flush=True)
+
+        # Bỏ qua nhẹ nhàng nếu vẫn không tìm thấy id thay vì văng script
+        if not video_id:
+            print(" [LỖI - Không tìm thấy video_id trong database]")
+            failed_count += 1
+            continue
         
         # Đường dẫn file đầu ra
         file_name = f"{video_id}.wav"
         output_path = os.path.join(OUTPUT_DIR, file_name)
-        
-        print(f"[{index+1}/{len(valid_tracks)}] Đang xử lý: {title}...", end="", flush=True)
         
         # Bỏ qua nếu file đã tồn tại trên ổ cứng
         if os.path.exists(output_path):
@@ -87,7 +98,7 @@ def process_snippets():
             success_count += 1
             # Cập nhật DB phòng trường hợp script bị ngắt giữa chừng lần trước
             tracks_col.update_one(
-                {"_id": video_id},
+                {"_id": track["_id"]},
                 {"$set": {
                     "snippet.path": output_path,
                     "snippet.start_time": 60,
@@ -104,7 +115,7 @@ def process_snippets():
             print(" [THÀNH CÔNG]")
             # Cập nhật trạng thái vào MongoDB
             tracks_col.update_one(
-                {"_id": video_id},
+                {"_id": track["_id"]},
                 {"$set": {
                     "snippet.path": output_path,
                     "snippet.start_time": 60,

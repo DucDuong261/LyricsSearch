@@ -15,7 +15,7 @@ print("Đang khởi động 'Bộ não' AI (Vui lòng đợi vài giây)...")
 model = SentenceTransformer(SBERT_MODEL, device='cpu')
 index = faiss.read_index(str(FAISS_INDEX_PATH))
 
-with open(str(ID_MAPPING_PATH), 'r') as f:
+with open(str(ID_MAPPING_PATH), 'r', encoding='utf-8') as f:
     id_mapping = json.load(f)
 
 tracks_col = get_tracks_collection()
