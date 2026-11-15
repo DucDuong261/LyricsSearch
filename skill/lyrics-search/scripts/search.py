@@ -22,7 +22,10 @@ def transcribe(path, lang):
     dev = "cuda:0" if torch.cuda.is_available() else "cpu"
     asr = pipeline("automatic-speech-recognition", model=WHISPER, device=dev,
                    generate_kwargs={"task": "transcribe", "language": lang})
-    return asr(path)["text"].strip()
+    # Decode with librosa so users do not need ffmpeg installed (wav/mp3/flac/ogg)
+    import librosa
+    audio, _ = librosa.load(path, sr=16000, mono=True)
+    return asr({"raw": audio, "sampling_rate": 16000}, return_timestamps=True)["text"].strip()
 
 
 def main():
@@ -69,6 +72,11 @@ def main():
 
     out = {"query": query, "confident": bool(results and results[0]["score"] >= args.threshold),
            "results": results}
+    if args.audio:
+        # Whisper-small often mis-hears sung Vietnamese, so a high score is not proof.
+        out["confident"] = False
+        out["note"] = ("Transcribed from audio and may be wrong. Treat results as candidates "
+                       "and show the user what was heard.")
     print(json.dumps(out, ensure_ascii=False, indent=2))
 
 

@@ -1,0 +1,4 @@
+# One song per line: Title - Artist   (lines starting with # are ignored)
+Em Của Ngày Hôm Qua - Sơn Tùng M-TP
+Hãy Trao Cho Anh - Sơn Tùng M-TP
+Nơi Này Có Anh - Sơn Tùng M-TP

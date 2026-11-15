@@ -1,73 +1,73 @@
 ---
 name: lyrics-search
-description: Finds a song's title and artist from a few remembered lyrics or a recorded clip, by semantic search over the user's own lyrics collection (built for Vietnamese music, works in any language). Use when the user asks "what song has the lyrics...", "tìm bài hát có câu...", or gives an audio clip to identify.
+description: Finds a song's title and artist from a few remembered lyrics or a recorded clip, by meaning-based search over a lyrics collection that the skill builds for you from a list of song names (built for Vietnamese music, works in any language). Use when the user asks "what song has the lyrics...", "tìm bài hát có câu...", "tên bài này là gì", or gives an audio clip to identify.
 ---
 
 # Lyrics Search
 
 Finds songs from lyrics you half-remember. It matches by **meaning**, not exact words, so a misheard or partial line still works.
 
-No database, no API keys, no accounts. Everything runs on your machine.
+You start from a blank page: **no database, no API keys, no account, and you do not need to know how to code.** Tell the agent which songs you care about; it downloads the lyrics, builds the search, and answers.
 
-**Network use:** the only network access is the one-time download of the open models (`paraphrase-multilingual-MiniLM-L12-v2`, and `openai/whisper-small` for `--audio`) from Hugging Face. Your lyrics and queries are never uploaded. The scripts read no environment variables and contain no credentials.
+## For the user (non-developer): what to say
 
-## How it works (in one minute)
+Just talk to your agent, for example:
 
-1. **You provide lyrics** (a folder of text files, one per song). A tiny sample is in `examples/lyrics/`.
-2. `build_index.py` turns every 1-3 line window into a vector and saves a local index. Do this once, and again whenever you add songs.
-3. `search.py` embeds your query the same way and returns the closest songs with a confidence score.
-4. With `--audio`, Whisper transcribes the clip first, then the same search runs.
+- "Set up lyrics-search. My songs are: Em Của Ngày Hôm Qua - Sơn Tùng M-TP, Hãy Trao Cho Anh - Sơn Tùng M-TP."
+- "Which song has the line 'đi một mình dưới mưa nhớ lời hứa'?"
+- "What song is this?" (attach a recording)
+- "Add these songs too: ..."
 
-## Setup (once)
-
-```bash
-pip install -r requirements.txt
-```
-The first run downloads the models (~500 MB for text; ~1 GB more if you use `--audio`).
-
-## Usage
-
-**1. Put lyrics in a folder**, one file per song, named `Title - Artist.txt` (`.lrc` works too, timestamps are stripped):
-```
-my_lyrics/
-  Chiều mưa phố vắng - Ca Sĩ Mẫu.txt
-```
-Or use one JSON file: `[{"title": "...", "artist": "...", "lyrics": "..."}]`.
-
-**2. Build the index:**
-```bash
-python scripts/build_index.py my_lyrics --out lyrics_data
-```
-
-**3. Search:**
-```bash
-python scripts/search.py "đi một mình dưới mưa nhớ lời hứa của em"
-python scripts/search.py --audio my_recording.wav
-```
-
-## Reading the result
-
-```json
-{
-  "query": "...",
-  "confident": true,
-  "results": [{"title": "...", "artist": "...", "matched_line": "...", "score": 0.82}]
-}
-```
-- `score` is cosine similarity (0 to 1). **≥ 0.60** = likely right, **below** = probably not in your collection.
-- `confident: false` means: tell the user no good match was found, then show the closest candidates as guesses. Never present them as certain.
-- `matched_line` is the part of the song that matched. Show it so the user can verify.
+The agent does everything below. You never need to open a terminal.
 
 ## Instructions for the agent
 
-- If `lyrics_data/` does not exist, ask the user for their lyrics folder and run `build_index.py` first.
-- Pass the user's lyrics verbatim as the query; do not translate or "fix" them.
-- For audio, prefer clips of 5-30 seconds with a clear voice. Vietnamese is the default; use `--lang en` etc. for other languages.
-- Only return title, artist and the matched line. Do not print full copyrighted lyrics.
-- Only index lyrics the user has the right to use.
+### First-time setup (blank page)
+1. Install dependencies once: `pip install -r requirements.txt` (in this skill folder). First model download is large (~500 MB text, ~1 GB more for audio); tell the user it is a one-time wait.
+2. Ask the user which songs they want to be able to recognise, as `Title - Artist`. If they have no list, offer to start with a few artists or songs they name. Write them to `songs.txt`, one per line.
+3. Run `python scripts/quickstart.py songs.txt`. This fetches lyrics, then builds the index into `lyrics_data/`.
+4. Read the "Not found" list from the output. For those songs, ask the user to paste the lyrics (or an `.lrc`/`.txt` file), save each as `my_lyrics/Title - Artist.txt`, then run `python scripts/build_index.py my_lyrics --out lyrics_data` again.
+
+### Searching
+- Text: `python scripts/search.py "lyrics as the user typed them"`
+- Audio: `python scripts/search.py --audio clip.wav` (wav/mp3/flac, 5-30 s, clear voice; no ffmpeg needed). Default language is Vietnamese; use `--lang en` etc.
+- Pass the user's words verbatim. Do not translate or "correct" them.
+
+### Adding songs later
+Append to `songs.txt` and re-run `quickstart.py`, or drop `Title - Artist.txt` files into `my_lyrics/` and re-run `build_index.py`.
+
+### Answering
+Result format:
+```json
+{"query": "...", "confident": true,
+ "results": [{"title": "...", "artist": "...", "matched_line": "...", "score": 0.82}]}
+```
+- `score` is cosine similarity. **≥ 0.60** is likely right.
+- `confident: false`: say no good match was found in the collection and offer the closest as guesses, never as certain. Suggest adding the song if the user thinks it should be there.
+- For audio, `confident` is always false: present the top 3 as candidates and show what was heard (`query`) so the user can judge a mis-transcription.
+- Show title, artist and the matched line only. Do not print full lyrics.
+
+## Where the lyrics come from
+
+- **Automatic:** [LRCLIB](https://lrclib.net), a free community lyrics database with a public API (no key). Coverage of popular Vietnamese songs is good; rare or very new songs may be missing.
+- **Manual:** anything the user pastes or provides as `.txt`/`.lrc` files. Only index lyrics you have the right to use; the index stays on your machine.
+
+## Privacy and network
+
+The only network calls are: (1) the one-time download of the open models (`paraphrase-multilingual-MiniLM-L12-v2`, and `openai/whisper-small` for audio) from Hugging Face; (2) `fetch_lyrics.py` sending song titles and artists to `lrclib.net`. Audio files and search queries never leave the machine. The scripts read no environment variables and contain no credentials.
+
+## Manual use (developers)
+
+```bash
+pip install -r requirements.txt
+python scripts/fetch_lyrics.py examples/songs.txt --out my_lyrics   # or use your own .txt files
+python scripts/build_index.py my_lyrics --out lyrics_data
+python scripts/search.py "câu lời nhớ mang máng"
+```
+Lyrics files are named `Title - Artist.txt`; a JSON file `[{"title","artist","lyrics"}]` also works.
 
 ## Limits
 
-- It only finds songs that are **in your collection**. It does not search the internet.
-- Whisper can mis-hear sung vocals; if audio search fails, ask the user to type the lyrics.
-- Accuracy drops for very short queries (1-2 words).
+- It only finds songs that are **in your collection**; it does not search the whole internet.
+- Audio search is approximate: in our test on real 30 s Vietnamese song clips (40-song collection), the right song was ranked first in 3 of 6 clips. Whisper mis-hears sung vocals, so audio results are always returned as candidates (`confident: false`) with a `note`. Show the top 3 and what was heard, and ask the user to type the lyrics if none fit.
+- Very short queries (1-2 words) are unreliable.
