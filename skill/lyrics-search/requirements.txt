@@ -1,0 +1,8 @@
+faiss-cpu>=1.8.0
+sentence-transformers>=2.5.0
+numpy
+# only needed for --audio:
+transformers>=4.38.0
+torch
+librosa>=0.10.1
+soundfile>=0.12.1
